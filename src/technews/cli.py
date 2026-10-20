@@ -465,7 +465,8 @@ def setup_chatterbox() -> None:
         _fail(f"Chatterbox setup failed: {e}")
     console.print("Loading the models (downloads ~5 GB the first time)...")
     say("Chatterbox is set up. This is how your tech news will sound.", None, None, "chatterbox", Path("data/say.wav"))
-    console.print("Switch to it with [bold]voice.engine: chatterbox[/] in config/config.yaml.")
+    if load_config().voice.engine != "chatterbox":
+        console.print("Switch to it with [bold]voice.engine: chatterbox[/] in config/config.yaml or on the Settings page.")
 
 
 # --------------------------------------------------------------------------- accounts

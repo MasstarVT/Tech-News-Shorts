@@ -72,14 +72,14 @@ def setup(cfg: AppConfig, out: Callable[[str], None] = print) -> None:
     py = venv_python(cfg)
     if not py.exists():
         out(f"Creating {venv_dir(cfg)}")
-        subprocess.run([uv, "venv", str(venv_dir(cfg)), "--python", "3.12"], check=True, creationflags=_NO_WINDOW)
+        subprocess.run([uv, "venv", str(venv_dir(cfg)), "--python", "3.12"], check=True)  # in the user's console
     with tempfile.TemporaryDirectory() as tmp:
         overrides = Path(tmp) / "overrides.txt"
         overrides.write_text(OVERRIDES, encoding="utf-8")
         out(f"Installing chatterbox-tts {VERSION} with torch for {cfg.voice.chatterbox.torch_backend}")
         subprocess.run([uv, "pip", "install", "--python", str(py), f"chatterbox-tts=={VERSION}", "setuptools<81",
                         "--override", str(overrides), "--torch-backend", cfg.voice.chatterbox.torch_backend],
-                       check=True, creationflags=_NO_WINDOW)
+                       check=True)
 
 
 def unload_ollama(cfg: AppConfig) -> None:
