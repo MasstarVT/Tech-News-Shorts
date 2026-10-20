@@ -1,0 +1,11 @@
+SOURCE: {{ source }}{% if also_in %} (also reported by {{ also_in }}){% endif %}
+PUBLISHED: {{ published }}
+HEADLINE: {{ title }}
+URL: {{ url }}
+
+ARTICLE:
+"""
+{{ context }}
+"""
+
+Write the script for this story.

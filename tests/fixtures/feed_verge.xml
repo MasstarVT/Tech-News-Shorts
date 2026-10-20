@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Sample Feed A</title>
+  <entry>
+    <title>Chipmaker unveils a faster laptop processor</title>
+    <link rel="alternate" href="https://example.com/a/chip-laptop"/>
+    <id>https://example.com/a/chip-laptop</id>
+    <published>2026-10-20T08:00:00Z</published>
+    <summary type="html">&lt;p&gt;The new processor is &lt;b&gt;30%&lt;/b&gt; faster than last year's model, the company said.&lt;/p&gt;</summary>
+  </entry>
+  <entry>
+    <title>The best laptop deals this week</title>
+    <link rel="alternate" href="https://example.com/a/deals"/>
+    <id>https://example.com/a/deals</id>
+    <published>2026-10-20T09:00:00Z</published>
+    <summary>Save on laptops.</summary>
+  </entry>
+  <entry>
+    <title>Old news from last month</title>
+    <link rel="alternate" href="https://example.com/a/old"/>
+    <id>https://example.com/a/old</id>
+    <published>2026-09-01T09:00:00Z</published>
+    <summary>Stale.</summary>
+  </entry>
+</feed>

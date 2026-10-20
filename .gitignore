@@ -1,0 +1,42 @@
+# python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+
+# node
+node_modules/
+video/out/
+video/.remotion/
+
+# secrets
+.env
+config/config.yaml
+config/secrets/*
+!config/secrets/README.md
+*.token.json
+client_secret*.json
+
+# runtime data (jobs, models, history, caches)
+data/
+out/
+
+# media dropped in by the user
+assets/music/*
+!assets/music/README.md
+
+# os / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Claude Code local files
+.claude/
+CLAUDE.md
+claude.md
+graphify-out/

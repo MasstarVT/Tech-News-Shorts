@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>Sample Feed B</title>
+    <item>
+      <title>Chipmaker unveils faster laptop processor, claims 30% gain</title>
+      <link>https://example.org/b/chip</link>
+      <pubDate>Tue, 20 Oct 2026 07:30:00 +0000</pubDate>
+      <description>Short teaser.</description>
+      <content:encoded><![CDATA[<p>The company announced a laptop processor it says is 30% faster than the previous generation. It ships in November and costs $499 for laptop makers. The chip uses a 3 nanometer process. Analysts expect the first laptops to arrive in time for the holidays. The company did not share battery life numbers. More details will come at a developer event later this year, the company said, adding that it has signed up several large laptop brands.</p><p>Rivals are expected to respond with their own chips next year.</p>]]></content:encoded>
+    </item>
+    <item>
+      <title>Space company launches weather satellite</title>
+      <link>https://example.org/b/satellite</link>
+      <pubDate>Tue, 20 Oct 2026 03:00:00 +0000</pubDate>
+      <description>A rocket carried a new weather satellite into orbit on Tuesday.</description>
+    </item>
+  </channel>
+</rss>
