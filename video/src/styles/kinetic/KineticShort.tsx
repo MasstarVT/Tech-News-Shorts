@@ -10,7 +10,10 @@ import {SceneVisual, Stage} from "./scenes";
 
 ensureFonts();
 
-/** Kinetic style: karaoke captions, springy scene graphics, colour wipes between scenes. */
+/**
+ * Kinetic style: karaoke captions, springy scene graphics, colour wipes between scenes. On-screen words
+ * jump and the camera punches in as the voice says them, so the stage keeps moving after each entrance.
+ */
 export const KineticShort: React.FC<ShortProps> = (input) => {
   const frame = useCurrentFrame();
   const theme = {...defaultTheme, ...input.theme};
@@ -28,7 +31,7 @@ export const KineticShort: React.FC<ShortProps> = (input) => {
 
       {scenes.map((s, k) => (
         <Sequence key={s.id} from={starts[k]} durationInFrames={s.durationInFrames} name={`${k + 1}. ${s.visual.type}`}>
-          <Stage d={s.durationInFrames}>
+          <Stage scene={s}>
             <SceneVisual scene={s} p={p} tint={tints[k]} brand={input.brand.name} theme={theme} />
           </Stage>
           {s.audio ? <Html5Audio src={staticFile(s.audio)} /> : null}
@@ -36,7 +39,7 @@ export const KineticShort: React.FC<ShortProps> = (input) => {
       ))}
 
       <Wipes starts={starts} tints={tints} p={p} />
-      <Header props={{...input, theme}} p={p} tint={tints[i]} mouth={mouth} />
+      <Header props={{...input, theme}} p={p} tint={tints[i]} mouth={mouth} sinceCut={i > 0 ? frame - starts[i] : 999} />
       <Progress scenes={scenes} starts={starts} tint={tints[i]} p={p} />
       {input.captions.enabled ? (
         <Captions scenes={scenes} starts={starts} p={p} tints={tints} maxWords={input.captions.maxWords} maxChars={input.captions.maxChars} />

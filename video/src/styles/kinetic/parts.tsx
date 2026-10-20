@@ -1,10 +1,10 @@
 import React from "react";
-import {AbsoluteFill, Easing, interpolate, spring, useCurrentFrame, useVideoConfig} from "remotion";
+import {AbsoluteFill, Easing, interpolate, random, spring, useCurrentFrame, useVideoConfig} from "remotion";
 import {paginate, sceneIndexAt} from "../../components/Captions";
 import {Mascot} from "../../components/Mascot";
 import {DISPLAY, TEXT} from "../../fonts";
 import {SAFE} from "../../theme";
-import type {Scene, ShortProps, Theme} from "../../types";
+import type {Scene, ShortProps, Theme, Word} from "../../types";
 
 // Kinetic style: bold type that moves with the voice. Same props, safe zones and timings as the blueprint style.
 
@@ -51,6 +51,99 @@ export const shake = (frame: number, impacts: number[], amp = 14) => {
   return {x, y};
 };
 
+export const LEAD_MS = 70; // same lead as the speech bubble: onsets land slightly before phoneme boundaries
+
+const STOP = new Set(
+  "a an the of to and or but in on at for by with from as is are was be it its this that these those your you we they them their our how what why who new".split(" "),
+);
+
+const norm = (w: string) => {
+  const s = w.toLowerCase().replace(/['’]s$/, "").replace(/[^\p{L}\p{N}]/gu, "");
+  return s.length > 3 && s.endsWith("s") ? s.slice(0, -1) : s;
+};
+
+/** Same word, allowing for endings (detect / detection) and number formats (50M / 50). */
+const sameWord = (a: string, b: string) => {
+  if (/\d/.test(a) || /\d/.test(b)) return a.replace(/\D/g, "") === b.replace(/\D/g, "");
+  if (a === b) return true;
+  const [short, long] = a.length < b.length ? [a, b] : [b, a];
+  return short.length >= 5 && long.startsWith(short);
+};
+
+/**
+ * Scene frames where the narration says each word of `text` (one list per word, split on spaces).
+ * Stopwords and words the voice never says get an empty list.
+ */
+export const spokenHits = (text: string, words: Word[], fps: number): number[][] => {
+  const spoken = words.flatMap((w) => {
+    const f = Math.round(((w.startMs - LEAD_MS) / 1000) * fps);
+    return w.text.split(/[-/–—]/).map((part) => ({t: norm(part), f}));
+  });
+  return text
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => {
+      const t = norm(w);
+      if (!t || STOP.has(t)) return [];
+      return spoken.filter((s) => s.t && sameWord(t, s.t)).map((s) => s.f);
+    });
+};
+
+/** 0..1 bump that peaks two frames after each hit and fades out. */
+export const pulse = (frame: number, hits: number[], decay = 8) => {
+  let v = 0;
+  for (const f of hits) {
+    const t = frame - f;
+    if (t < 0 || t > decay * 5) continue;
+    v = Math.max(v, t < 2 ? t / 2 : Math.exp(-(t - 2) / decay));
+  }
+  return v;
+};
+
+/** Narration loudness around a scene frame, averaged over +-4 frames so glows breathe instead of flicker. */
+export const energy = (scene: Scene, frame: number) => {
+  const m = scene.mouth;
+  if (!m.length) return 0;
+  let sum = 0;
+  let weight = 0;
+  for (let k = -4; k <= 4; k++) {
+    const wgt = 5 - Math.abs(k);
+    sum += (m[Math.min(m.length - 1, Math.max(0, frame + k))] ?? 0) * wgt;
+    weight += wgt;
+  }
+  return sum / weight;
+};
+
+/** Seconds-scale idle sway so nothing on screen ever sits perfectly still. */
+export const sway = (frame: number, period: number, amp: number, phase = 0) => amp * Math.sin((frame / period) * Math.PI * 2 + phase);
+
+/** Embers that drift up through the background; they take the scene colour and get a kick at every cut. */
+const Motes: React.FC<{tint: string; text: string; starts: number[]}> = ({tint, text, starts}) => {
+  const frame = useCurrentFrame();
+  const {width, height} = useVideoConfig();
+  let kick = 0;
+  for (const f of starts.slice(1)) if (frame >= f) kick += 260 * (1 - Math.exp(-(frame - f) / 7));
+  const span = height + 80;
+  return (
+    <>
+      {Array.from({length: 30}, (_, k) => {
+        const r = (key: string) => random(`mote-${key}-${k}`);
+        const speed = 0.7 + r("v") * 1.6;
+        const size = 2.5 + r("s") * 6.5;
+        const y = ((((r("y") * span - frame * speed - kick * (0.5 + size / 9)) % span) + span) % span) - 40;
+        const x = r("x") * width + sway(frame, 90 + r("p") * 120, 26 + r("a") * 30, r("ph") * 6.28);
+        const twinkle = 0.55 + 0.45 * Math.sin(frame / (7 + r("t") * 9) + r("tp") * 6.28);
+        const colored = k % 3 !== 0;
+        return k % 7 === 0 ? (
+          <circle key={k} cx={x} cy={y} r={size * 1.6} fill="none" stroke={tint} strokeWidth={2} strokeOpacity={0.3 * twinkle} />
+        ) : (
+          <circle key={k} cx={x} cy={y} r={size} fill={colored ? tint : text} fillOpacity={(colored ? 0.42 : 0.22) * twinkle} />
+        );
+      })}
+    </>
+  );
+};
+
 /** Glowing colour fields that drift and take on each scene's colour, over a moving dot grid. */
 export const Background: React.FC<{p: Palette; tints: string[]; starts: number[]}> = ({p, tints, starts}) => {
   const frame = useCurrentFrame();
@@ -62,8 +155,8 @@ export const Background: React.FC<{p: Palette; tints: string[]; starts: number[]
       style={{
         opacity,
         background: [
-          `radial-gradient(48% 26% at ${50 + 20 * Math.sin(frame / 95)}% ${32 + 7 * Math.cos(frame / 70)}%, ${mix(color, 42)} 0%, transparent 72%)`,
-          `radial-gradient(55% 30% at ${28 + 16 * Math.cos(frame / 120)}% ${74 + 5 * Math.sin(frame / 85)}%, ${mix(color, 22)} 0%, transparent 70%)`,
+          `radial-gradient(48% 26% at ${50 + 22 * Math.sin(frame / 60)}% ${32 + 9 * Math.cos(frame / 45)}%, ${mix(color, 42)} 0%, transparent 72%)`,
+          `radial-gradient(55% 30% at ${28 + 18 * Math.cos(frame / 75)}% ${74 + 7 * Math.sin(frame / 55)}%, ${mix(color, 22)} 0%, transparent 70%)`,
         ].join(","),
       }}
     />
@@ -80,18 +173,27 @@ export const Background: React.FC<{p: Palette; tints: string[]; starts: number[]
           </pattern>
         </defs>
         <rect width={width} height={height} fill="url(#k-dots)" />
+        <Motes tint={tints[i]} text={p.text} starts={starts} />
       </svg>
       <AbsoluteFill style={{background: "radial-gradient(90% 60% at 50% 45%, transparent 55%, rgba(0,0,0,0.55) 100%)"}} />
     </AbsoluteFill>
   );
 };
 
-/** Brand row: Byte in a round avatar that glows while talking, source and date, topic chip. */
-export const Header: React.FC<{props: ShortProps; p: Palette; tint: string; mouth: number}> = ({props, p, tint, mouth}) => {
+/** Brand row: Byte in a round avatar that glows while talking and hops at every cut, source and date, topic chip. */
+export const Header: React.FC<{props: ShortProps; p: Palette; tint: string; mouth: number; sinceCut: number}> = ({
+  props,
+  p,
+  tint,
+  mouth,
+  sinceCut,
+}) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
   const enter = spring({frame: frame - 1, fps, config: {damping: 16, stiffness: 140}});
   const live = 0.55 + 0.45 * Math.sin(frame / 5);
+  const hopP = spring({frame: sinceCut, fps, config: {damping: 9, stiffness: 170, mass: 0.6}});
+  const hop = -Math.sin(Math.min(1, hopP) * Math.PI) * 18;
   return (
     <div
       style={{
@@ -117,6 +219,7 @@ export const Header: React.FC<{props: ShortProps; p: Palette; tint: string; mout
           boxShadow: `0 0 ${12 + 36 * mouth}px ${mix(tint, 35 + 45 * mouth)}`,
           overflow: "hidden",
           position: "relative",
+          transform: `translateY(${hop}px) rotate(${hop * -0.4 + sway(frame, 110, 2.5)}deg) scale(${1 + 0.03 * mouth})`,
         }}
       >
         <div style={{position: "absolute", left: 3, top: 8, width: 94, height: 108}}>
@@ -187,8 +290,6 @@ export const Progress: React.FC<{scenes: Scene[]; starts: number[]; tint: string
     </div>
   );
 };
-
-const LEAD_MS = 70; // same lead as the speech bubble: onsets land slightly before phoneme boundaries
 
 const captionSize = (chars: number, longest: number) => {
   if (chars <= 10 && longest <= 9) return 128;
@@ -305,45 +406,76 @@ export const Wipes: React.FC<{starts: number[]; tints: string[]; p: Palette}> = 
         const e = interpolate(t, [-8, 9], [0, 1], {easing: Easing.inOut(Easing.cubic)});
         const left = -1900 + e * 3100;
         const bar: React.CSSProperties = {position: "absolute", top: -120, height: box.h + 240, transform: "skewX(-12deg)"};
+        // Every other cut sweeps the other way.
         return (
-          <React.Fragment key={f}>
+          <div key={f} style={{position: "absolute", inset: 0, transform: k % 2 ? "scaleX(-1)" : undefined}}>
             <div style={{...bar, left, width: 1700, background: tints[k + 1], borderRadius: 24}} />
             <div style={{...bar, left: left - 130, width: 54, background: p.text, opacity: 0.9, borderRadius: 12}} />
-          </React.Fragment>
+            <div style={{...bar, left: left - 230, width: 22, background: tints[k + 1], opacity: 0.7, borderRadius: 8}} />
+          </div>
         );
       })}
     </div>
   );
 };
 
-/** Words that rise out of a mask one after another. */
+/**
+ * Words that rise out of a mask one after another. With `hits` (from spokenHits) each word jumps and
+ * flashes `hitColor` when the narration says it.
+ */
 export const WordsRise: React.FC<{
   text: string;
   start: number;
   stagger?: number;
   style?: React.CSSProperties;
   color?: (word: string, k: number) => string | undefined;
-}> = ({text, start, stagger = 3, style, color}) => {
+  hits?: number[][];
+  hitColor?: string;
+  /** Idle float in px; words drift out of phase so the line ripples. */
+  bob?: number;
+}> = ({text, start, stagger = 3, style, color, hits, hitColor, bob = 0}) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
   const words = text.split(/\s+/).filter(Boolean);
   return (
     <div style={{textWrap: "balance", ...style}}>
       {words.map((w, k) => {
-        const s = spring({frame: frame - start - k * stagger, fps, config: {damping: 15, stiffness: 170, mass: 0.7}});
+        const at = start + k * stagger;
+        const s = spring({frame: frame - at, fps, config: {damping: 15, stiffness: 170, mass: 0.7}});
+        // Hits before the word has finished rising would flash something not yet on screen.
+        const h = hits ? pulse(frame, (hits[k] ?? []).filter((f) => f >= at + 8)) : 0;
+        const base = color?.(w, k) ?? (style?.color as string | undefined) ?? "currentColor";
+        const flash = hitColor && h > 0.01 ? mix(base === hitColor ? "#FFFFFF" : hitColor, Math.round(h * 100), base) : base;
+        const float = bob ? sway(frame, 70, bob, k * 0.9) * Math.min(1, Math.max(0, (frame - at - 10) / 20)) : 0;
         return (
           <React.Fragment key={k}>
             {k > 0 ? " " : null}
-            <span style={{display: "inline-block", overflow: "hidden", padding: "0.08em 0.06em 0.14em", margin: "-0.08em -0.06em -0.14em", verticalAlign: "top"}}>
+            <span
+              style={{
+                display: "inline-block",
+                overflow: frame - at > 14 ? "visible" : "hidden",
+                padding: "0.08em 0.06em 0.14em",
+                margin: "-0.08em -0.06em -0.14em",
+                verticalAlign: "top",
+              }}
+            >
               <span
                 style={{
                   display: "inline-block",
                   transform: `translateY(${(1 - s) * 110}%) rotate(${(1 - s) * 7}deg)`,
                   transformOrigin: "0 100%",
-                  color: color?.(w, k),
                 }}
               >
-                {w}
+                <span
+                  style={{
+                    display: "inline-block",
+                    transform: `translateY(calc(${float.toFixed(2)}px - ${(0.14 * h).toFixed(3)}em)) rotate(${(k % 2 ? 3 : -3) * h}deg) scale(${1 + 0.08 * h})`,
+                    transformOrigin: "50% 90%",
+                    color: flash,
+                  }}
+                >
+                  {w}
+                </span>
               </span>
             </span>
           </React.Fragment>
