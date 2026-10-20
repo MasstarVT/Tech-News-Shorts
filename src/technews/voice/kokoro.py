@@ -10,6 +10,8 @@ import httpx
 import numpy as np
 
 from ..config import AppConfig
+from .speech import SpeechToken, spoken_text
+from .timing import Take, estimate_word_timings, phoneme_groups, word_timings
 
 log = logging.getLogger(__name__)
 
@@ -44,12 +46,29 @@ def ensure_model_files(cfg: AppConfig, progress: Callable[[str, int, int], None]
     return model, voices
 
 
+def parse_blend(voice: str) -> list[tuple[str, float]]:
+    """"af_heart:0.7+af_bella:0.3" -> [("af_heart", 0.7), ("af_bella", 0.3)]; weights default to equal shares."""
+    parts = []
+    for part in voice.split("+"):
+        name, _, weight = part.strip().partition(":")
+        parts.append((name.strip(), float(weight) if weight else 1.0))
+    total = sum(w for _, w in parts)
+    if not parts or total <= 0:
+        raise ValueError(f"Bad voice blend '{voice}'")
+    return [(n, w / total) for n, w in parts]
+
+
 class KokoroEngine:
-    def __init__(self, cfg: AppConfig, progress: Callable[[str, int, int], None] | None = None):
+    name = "kokoro"
+
+    def __init__(self, cfg: AppConfig, progress: Callable[[str, int, int], None] | None = None,
+                 voice: str | None = None, speed: float | None = None):
         from kokoro_onnx import Kokoro
 
         model, voices = ensure_model_files(cfg, progress)
         self.cfg = cfg
+        self.voice = voice or cfg.voice.voice
+        self.speed = speed or cfg.voice.speed
         self.kokoro = Kokoro(str(model), str(voices))
         self.sample_rate = 24000
         if not self.kokoro.has_timings:
@@ -65,9 +84,24 @@ class KokoroEngine:
     def phonemize(self, text: str) -> str:
         return self.kokoro.tokenizer.phonemize(text, self.cfg.voice.lang)
 
+    def style(self, voice: str) -> np.ndarray:
+        blend = parse_blend(voice)
+        for name, _ in blend:
+            if name not in self.kokoro.voices:
+                raise ValueError(f"Unknown Kokoro voice '{name}'. Run `technews voices` to list them.")
+        return sum(self.kokoro.get_voice_style(n) * w for n, w in blend).astype(np.float32)
+
     def synth(self, text: str, voice: str, speed: float) -> tuple[np.ndarray, int, list]:
-        if voice not in self.kokoro.voices:
-            raise ValueError(f"Unknown Kokoro voice '{voice}'. Run `technews voices` to list them.")
-        audio, sr, timings = self.kokoro.create_timed(text, voice=voice, speed=speed, lang=self.cfg.voice.lang)
+        style = self.style(voice)
+        audio, sr, timings = self.kokoro.create_timed(text, voice=style, speed=speed, lang=self.cfg.voice.lang)
         self.sample_rate = sr
         return np.asarray(audio, dtype=np.float32), sr, timings
+
+    def speak(self, tokens: list[SpeechToken], **_) -> Take:
+        audio, sr, timings = self.synth(spoken_text(tokens), self.voice, self.speed)
+        if self.has_timings and timings:
+            return Take(audio, sr, word_timings(tokens, phoneme_groups(timings), self.phonemize), True, [])
+        return Take(audio, sr, estimate_word_timings(tokens, len(audio) / sr), False, [])
+
+    def close(self) -> None:
+        pass

@@ -4,7 +4,7 @@ Turns the day's tech news into animated vertical shorts for YouTube Shorts and T
 
 1. **Picks a story.** It reads tech RSS feeds and the Hacker News front page, groups reports of the same news, and ranks them by freshness, how many outlets cover it, Hacker News points and your topic keywords. Stories it already covered are skipped.
 2. **Writes the script.** An LLM of your choice turns the article into 30–45 seconds of narration plus a graphic for each line. The default is a local model through Ollama. It may only use facts from the article, and any stat graphic whose number isn't in the article is replaced.
-3. **Narrates it.** [Kokoro](https://github.com/thewh1teagle/kokoro-onnx) TTS runs on the CPU and reports when every word is spoken, so captions and the mascot's mouth stay in sync. Money, model numbers and units are rewritten so they're read correctly ("$5B" → "5 billion dollars", "RTX 5090" → "fifty ninety").
+3. **Narrates it.** With [Kokoro](https://github.com/thewh1teagle/kokoro-onnx) on the CPU, [Chatterbox](https://github.com/resemble-ai/chatterbox) on the GPU or [ElevenLabs](https://elevenlabs.io), every word is timed, so captions and the mascot's mouth stay in sync. Money, model numbers and units are rewritten so they're read correctly ("$5B" → "5 billion dollars", "RTX 5090" → "fifty ninety").
 4. **Animates it.** [Remotion](https://www.remotion.dev) renders a 1080×1920 video. The default `kinetic` style:
    - Big captions pop in word by word as they're spoken, with the current word on a colour slab.
    - Each scene gets its own colour and a springy graphic: a headline that rises in, a stat whose digits roll like an odometer, an icon in orbit, a versus slam, or a checklist.
@@ -40,7 +40,8 @@ The first run downloads the Kokoro voice model (~350 MB) and Remotion's headless
 | `technews publish <job> --to export,youtube,tiktok` | Post a finished video (`--dry-run` to test) |
 | `technews daily` | Scheduled entry point: make today's video and publish to the enabled targets |
 | `technews jobs` | Recent jobs and their status |
-| `technews voices` / `technews say "text"` | List Kokoro voices / audition a line |
+| `technews voices` / `technews say "text"` | List voices / audition a line (`--engine chatterbox` to try another engine) |
+| `technews setup-chatterbox` | Install the Chatterbox GPU voice into its own venv (~8 GB, plus ~5 GB of models on first use) |
 | `technews auth youtube` / `technews auth tiktok` | Connect accounts |
 
 ### Web app
@@ -77,7 +78,19 @@ The LLM layer is the same one Clip Creator uses: structured output, responses ca
 
 ## Voice
 
-The default is `af_heart` at speed 1.15. `technews voices` lists the others: `am_michael`, `am_fenrir` and `am_puck` are good US male voices, and `bf_emma` and `bm_george` are UK voices. Add words the voice gets wrong under `voice.pronunciations` (for example `Asus: ay-soos`). Test them with `technews say "Asus launched a laptop"`.
+Pick an engine with `voice.engine` in `config.yaml` (or on the Settings page):
+
+| Engine | Sound | Runs on | Setup |
+|---|---|---|---|
+| `kokoro` (default) | Clean, a little flat | CPU, offline | Nothing; downloads ~350 MB on first use |
+| `chatterbox` | Expressive, close to a real narrator | GPU (RTX 20-50 series), offline | `technews setup-chatterbox` (~13 GB with models) |
+| `elevenlabs` | The most lifelike | ElevenLabs API, paid per character | `ELEVENLABS_API_KEY` in `.env` |
+
+- **Kokoro**: `af_heart` at speed 1.05. `technews voices` lists the others: `am_michael`, `am_fenrir` and `am_puck` are good US male voices, and `bf_emma` and `bm_george` are UK voices. Blend two with `af_heart:0.7+af_bella:0.3`.
+- **Chatterbox**: Resemble AI's MIT-licensed model, run in `data/venvs/chatterbox` so its pinned torch doesn't touch the app. Every take is aligned with a speech recogniser. Takes that skip words or get a number wrong are re-recorded, and anything still off is flagged before posting. `model: turbo` is faster. Its built-in voice talks fast, so the standard model is slowed to `pace: 0.85` without changing pitch. To clone a voice, put 10-20 s of one clean speaker in `data/voices/` and pick it (only voices you have the right to use). Ollama's model is unloaded first so both fit on a 12 GB card.
+- **ElevenLabs**: set `voice.elevenlabs.voice` to a name or id (`technews voices --engine elevenlabs`). Neighbouring scenes are sent along so the delivery flows across cuts, and takes are cached per job, so re-recording after an edit only pays for changed scenes.
+
+Every clip is mastered the same way (EQ, gentle compression, -16 LUFS), and the pause after each scene follows its punctuation. Add words a voice gets wrong under `voice.pronunciations` (for example `Asus: ay-soos`), then test with `technews say "Asus launched a laptop"`.
 
 ## Posting
 
@@ -110,7 +123,7 @@ schtasks /Create /SC DAILY /ST 09:00 /TN "Tech News Shorts" /TR "cmd /c cd /d \"
 ```
 RSS feeds + Hacker News -> cluster + rank (skip covered) -> article text (trafilatura)
   -> LLM script (JSON schema) -> repair + number check
-  -> Kokoro per scene (word timings, mouth envelope) -> props.json
+  -> voice per scene: Kokoro / Chatterbox / ElevenLabs (word timings, mastering, mouth envelope) -> props.json
   -> Remotion (video/render.mjs) -> video.mp4 -> export / Discord / YouTube / TikTok
 ```
 
@@ -132,7 +145,7 @@ out/2026-10-20_apple-touchscreen-macbook-pro/
 - Scripts may only use facts from the source article. Numbers in stat graphics are checked against it, and anything that looks invented is listed under "check before posting" in the terminal and on Discord. Review before you publish.
 - Every description credits the source outlet and links the article, and says the narration is an AI voice. TikTok posts set the AI-generated label.
 - YouTube doesn't monetize mass-produced, repetitive content. Your own review, picks and angle are what make the channel yours.
-- Licenses: Remotion is free for individuals and companies of up to 3 people; larger companies need a [company license](https://www.remotion.pro). Kokoro model (Apache 2.0), kokoro-onnx (MIT), Barlow fonts (SIL OFL), Lucide icons (ISC).
+- Licenses: Remotion is free for individuals and companies of up to 3 people; larger companies need a [company license](https://www.remotion.pro). Kokoro model (Apache 2.0), kokoro-onnx (MIT), Chatterbox (MIT; its audio carries Resemble's inaudible Perth watermark), Barlow fonts (SIL OFL), Lucide icons (ISC).
 
 ## Development
 

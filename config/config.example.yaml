@@ -32,15 +32,28 @@ llm:
   budget_usd_per_video: 0.50       # cloud providers only
 
 script:
-  min_words: 80
-  max_words: 135
+  min_words: 75
+  max_words: 125
   max_scenes: 6
   style: "Upbeat and clear. Explain jargon in plain words. No hype words like 'insane' or 'game-changer'."
   verify_numbers: true             # stat graphics must use numbers that appear in the article
 
 voice:
-  voice: af_heart                  # `technews voices` lists them; `technews say "text"` to audition
-  speed: 1.15
+  engine: kokoro                   # kokoro (fast, CPU) | chatterbox (expressive, GPU) | elevenlabs (most lifelike, paid)
+  voice: af_heart                  # Kokoro voice; blend two with af_heart:0.7+af_bella:0.3
+  speed: 1.05                      # Kokoro speed; above ~1.1 it sounds rushed
+  chatterbox:                      # install once: `technews setup-chatterbox`
+    model: standard                # standard | turbo (faster, ignores exaggeration and cfg_weight)
+    voice: default                 # or a 10-20 s clip in data/voices/ to clone (voices you have the right to use)
+    exaggeration: 0.5              # emotion; higher also speeds the delivery up
+    cfg_weight: 0.5                # lower = slower, more deliberate pacing
+  elevenlabs:                      # needs ELEVENLABS_API_KEY in .env; billed per character
+    voice: EXAVITQu4vr4xnSDxMaL    # voice id or name, `technews voices --engine elevenlabs` lists them
+    model: eleven_multilingual_v2  # the steadiest; newer models (eleven_v3, eleven_v4) are more expressive
+    stability: 0.45                # lower = more expressive, less consistent
+    style: 0.15
+    speed: 1.0
+  master: true                     # EQ, compression and loudness levelling on every clip
   pronunciations: {}               # extra words the voice gets wrong, e.g. {Asus: ay-soos}
 
 render:

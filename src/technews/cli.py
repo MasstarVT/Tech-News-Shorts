@@ -115,10 +115,10 @@ def _print_script(job) -> None:
 
 def _done(job) -> None:
     console.print(f"\n[green]Done:[/] {job.video_path if job.video_path.exists() else job.dir}")
-    script = job.load_script()
-    if script.warnings:
+    warnings = job.load_script().warnings + (job.load_voice().warnings if job.has_voice() else [])
+    if warnings:
         console.print("[yellow]Check these before posting:[/]")
-        for w in script.warnings:
+        for w in warnings:
             console.print(f"  - {w}")
 
 
@@ -196,7 +196,7 @@ def make(
     pick: int = typer.Option(None, help="Use the Nth story from `technews news` instead of the top one"),
     url: str = typer.Option(None, help="Make a video about this article instead"),
     llm: str = typer.Option(None, help="Script writer override: provider or provider:model (e.g. ollama:qwen3:14b, null)"),
-    voice: str = typer.Option(None, help="Kokoro voice (see `technews voices`)"),
+    voice: str = typer.Option(None, help="Voice for the configured engine (see `technews voices`)"),
     render: bool = typer.Option(True, help="Render the video (--no-render stops after the voice)"),
     publish: bool = typer.Option(False, help="Publish to the enabled targets when done"),
     to: str = typer.Option(None, help="Comma-separated targets for --publish (export,youtube,tiktok)"),
@@ -232,7 +232,7 @@ def script(job_ref: str = typer.Argument("latest"), llm: str = typer.Option(None
 @app.command("voice")
 def voice_cmd(
     job_ref: str = typer.Argument("latest"),
-    voice: str = typer.Option(None, help="Kokoro voice"),
+    voice: str = typer.Option(None, help="Voice for the configured engine"),
     speed: float = typer.Option(None, help="Speaking speed, 0.5-2.0"),
 ) -> None:
     """Record (or re-record) a job's narration from script.json."""
@@ -243,6 +243,8 @@ def voice_cmd(
         ui.stage("Recording the voice")
         stage_voice(job, load_config(), voice, speed, hooks=ui.hooks())
     console.print(f"[green]Voice saved[/] in {job.voice_dir}")
+    for w in job.load_voice().warnings:
+        console.print(f"[yellow]check:[/] {w}")
 
 
 @app.command("render")
@@ -379,41 +381,91 @@ def list_jobs(limit: int = typer.Option(10)) -> None:
 # --------------------------------------------------------------------------- voice tools
 
 
+def _with_engine(engine: str | None):
+    cfg = load_config()
+    if not engine:
+        return cfg
+    if engine not in ("kokoro", "chatterbox", "elevenlabs"):
+        _fail(f"Unknown engine {engine!r} - pick kokoro, chatterbox or elevenlabs")
+    return cfg.model_copy(update={"voice": cfg.voice.model_copy(update={"engine": engine})})
+
+
 @app.command()
-def voices() -> None:
-    """List the Kokoro voices (downloads the model on first use)."""
+def voices(engine: str = typer.Option(None, help="kokoro, chatterbox or elevenlabs (default: voice.engine)")) -> None:
+    """List the voices of the voice engine."""
+    cfg = _with_engine(engine)
+    if cfg.voice.engine == "elevenlabs":
+        from .voice.elevenlabs import list_voices
+
+        table = Table("Name", "Voice id", "Kind")
+        for v in list_voices(cfg):
+            table.add_row(v["name"], v["voice_id"], v["category"])
+        console.print(table)
+        console.print(f"Current: [bold]{cfg.voice.elevenlabs.voice}[/] (set voice.elevenlabs.voice to a name or id)")
+        return
+    if cfg.voice.engine == "chatterbox":
+        from .voice.chatterbox import reference_voices, voices_dir
+
+        console.print(", ".join(reference_voices(cfg)))
+        console.print(f"\nCurrent: [bold]{cfg.voice.chatterbox.voice}[/]. To clone a voice, put 10-20 s of one clean "
+                      f"speaker in {voices_dir(cfg)} (only voices you have the right to use).")
+        return
     from .voice.kokoro import KokoroEngine
 
-    cfg = load_config()
     with console.status("Loading Kokoro..."):
-        engine = KokoroEngine(cfg)
-    names = engine.voices()
-    console.print(", ".join(names))
+        kokoro = KokoroEngine(cfg)
+    console.print(", ".join(kokoro.voices()))
     console.print(f"\nCurrent: [bold]{cfg.voice.voice}[/] at speed {cfg.voice.speed}. Best English voices: "
-                  "af_heart, af_bella (US female), am_michael, am_fenrir, am_puck (US male), bf_emma, bm_george (UK).")
+                  "af_heart, af_bella (US female), am_michael, am_fenrir, am_puck (US male), bf_emma, bm_george (UK). "
+                  "Blend two with af_heart:0.7+af_bella:0.3.")
 
 
 @app.command()
 def say(
     text: str,
-    voice: str = typer.Option(None),
-    speed: float = typer.Option(None),
+    voice: str = typer.Option(None, help="Voice for the engine (see `technews voices`)"),
+    speed: float = typer.Option(None, help="Kokoro / ElevenLabs speed"),
+    engine: str = typer.Option(None, help="kokoro, chatterbox or elevenlabs (default: voice.engine)"),
     out: Path = typer.Option(Path("data/say.wav"), help="Where to write the audio"),
 ) -> None:
-    """Speak a line with Kokoro to audition voices and pronunciations."""
+    """Speak a line to audition voices and pronunciations."""
     import soundfile as sf
 
-    from .voice.kokoro import KokoroEngine
+    from .voice import open_engine
+    from .voice.master import master
     from .voice.speech import spoken_text, to_speech
 
-    cfg = load_config()
-    engine = KokoroEngine(cfg)
-    spoken = spoken_text(to_speech(text, cfg.voice.pronunciations))
-    audio, sr, _ = engine.synth(spoken, voice or cfg.voice.voice, speed or cfg.voice.speed)
+    cfg = _with_engine(engine)
+    tokens = to_speech(text, cfg.voice.pronunciations_for())
+    with console.status(f"Loading {cfg.voice.engine}..."):
+        tts = open_engine(cfg, voice, speed)
+    try:
+        take = tts.speak(tokens)
+    finally:
+        tts.close()
+    audio = master(take.audio, take.sr, cfg.voice.loudness_lufs) if cfg.voice.master else take.audio
     target = out if out.is_absolute() else PROJECT_ROOT / out
     target.parent.mkdir(parents=True, exist_ok=True)
-    sf.write(target, audio, sr)
-    console.print(f"Read as: {spoken}\n[green]Saved[/] {target}")
+    sf.write(target, audio, take.sr)
+    console.print(f"Read as: {spoken_text(tokens)}")
+    for w in take.warnings:
+        console.print(f"[yellow]check:[/] {w}")
+    console.print(f"[green]Saved[/] {target}")
+
+
+@app.command("setup-chatterbox")
+def setup_chatterbox() -> None:
+    """Install Chatterbox (GPU voice) into its own venv under data/, then record a test line."""
+    from .voice.chatterbox import setup
+
+    cfg = _with_engine("chatterbox")
+    try:
+        setup(cfg, console.print)
+    except (RuntimeError, subprocess.CalledProcessError) as e:
+        _fail(f"Chatterbox setup failed: {e}")
+    console.print("Loading the models (downloads ~5 GB the first time)...")
+    say("Chatterbox is set up. This is how your tech news will sound.", None, None, "chatterbox", Path("data/say.wav"))
+    console.print("Switch to it with [bold]voice.engine: chatterbox[/] in config/config.yaml.")
 
 
 # --------------------------------------------------------------------------- accounts

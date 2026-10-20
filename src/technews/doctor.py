@@ -69,6 +69,19 @@ def check_voice(cfg: AppConfig) -> list[Check]:
         checks.append(Check("kokoro-onnx", "ok", "installed (espeak-ng bundled)"))
     except ImportError as e:
         checks.append(Check("kokoro-onnx", "fail", str(e), "uv sync"))
+    if cfg.voice.engine == "chatterbox":
+        from .voice.chatterbox import venv_dir, venv_python
+
+        have = venv_python(cfg).exists()
+        checks.append(Check("Chatterbox", "ok" if have else "fail",
+                            f"{cfg.voice.chatterbox.model} model, voice {cfg.voice.chatterbox.voice}" if have
+                            else f"no venv at {venv_dir(cfg)}", "" if have else "technews setup-chatterbox"))
+    elif cfg.voice.engine == "elevenlabs":
+        env = cfg.voice.elevenlabs.api_key_env
+        have = bool(secret(env))
+        checks.append(Check("ElevenLabs", "ok" if have else "fail",
+                            f"{cfg.voice.elevenlabs.model}, voice {cfg.voice.elevenlabs.voice}" if have else f"{env} missing",
+                            "" if have else f"Add {env}=... to .env"))
     return checks
 
 

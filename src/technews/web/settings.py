@@ -25,8 +25,12 @@ _Representer.add_representer(type(None), lambda r, _: r.represent_scalar("tag:ya
 EDITABLE = {
     "render.style",
     "render.captions.enabled",
+    "voice.engine",
     "voice.voice",
     "voice.speed",
+    "voice.chatterbox.voice",
+    "voice.elevenlabs.voice",
+    "voice.elevenlabs.speed",
     "llm.tasks.script.provider",
     "llm.tasks.script.model",
     "llm.tasks.script.effort",

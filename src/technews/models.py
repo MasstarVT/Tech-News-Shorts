@@ -100,8 +100,9 @@ class VoiceTrack(BaseModel):
     voice: str
     speed: float
     fps: int
-    timed: bool  # True when word timings came from the model, False when estimated
+    timed: bool  # True when word timings came from the model or an aligner, False when estimated
     scenes: list[SceneVoice]
+    warnings: list[str] = Field(default_factory=list)  # takes that may skip or garble words
 
     @property
     def duration_s(self) -> float:

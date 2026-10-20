@@ -30,7 +30,7 @@ def _env() -> Environment:
 
 def prompts(story: Story, cfg: AppConfig) -> tuple[str, str]:
     sc = cfg.script
-    words_per_s = 2.5 * cfg.voice.speed / 1.15
+    words_per_s = cfg.voice.words_per_s
     system = _env().get_template("system.j2").render(
         min_words=sc.min_words, max_words=sc.max_words, style=sc.style, source=story.source,
         min_s=round(sc.min_words / words_per_s), max_s=round(sc.max_words / words_per_s),

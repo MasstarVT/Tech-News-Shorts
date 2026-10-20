@@ -23,9 +23,10 @@ def notify(job: Job, cfg: AppConfig, results: dict | None = None) -> bool:
     story = job.load_story()
     origin = " ".join(x for x in (story.source, f"<{story.url}>" if story.url else "") if x)
     lines = [f"**{script.title}**"] + ([f"Source: {origin}"] if origin else [])
-    if script.warnings:
+    warnings = script.warnings + (job.load_voice().warnings if job.has_voice() else [])
+    if warnings:
         lines.append("Check before posting:")
-        lines += [f"- {w}" for w in script.warnings[:6]]
+        lines += [f"- {w}" for w in warnings[:6]]
     for platform, res in (results or {}).items():
         status = res.get("status", "")
         link = res.get("url") or res.get("path") or res.get("error", "")

@@ -278,6 +278,7 @@ export const JobPage: React.FC<{id: string}> = ({id}) => {
   };
 
   const updateNeeds: StageName[] = j.stale.voice || !j.voice ? ["voice", "render"] : j.stale.render || !j.video ? ["render"] : [];
+  const checks = [...(j.script?.warnings ?? []), ...(j.voice && !j.stale.voice ? j.voice.warnings ?? [] : [])];
   const published = Object.entries(j.published);
   const seek = (k: number) => {
     setOpen(k);
@@ -352,7 +353,7 @@ export const JobPage: React.FC<{id: string}> = ({id}) => {
           <div className="ctl">
             <select aria-label="Voice" value={voice} onChange={(e) => setVoice(e.target.value)}>
               <option value="">{j.voice?.voice ?? meta.defaults.voice} (current)</option>
-              {(settings.data?.options.voices ?? []).map((v) => (
+              {(settings.data ? settings.data.options.voices[settings.data.engine] : []).map((v) => (
                 <option key={v} value={v}>
                   {v}
                 </option>
@@ -653,12 +654,12 @@ export const JobPage: React.FC<{id: string}> = ({id}) => {
           <section>
             <div className="head">
               <h2>Fact checks</h2>
-              <span className="note">{j.script?.warnings.length ? `${j.script.warnings.length} to check` : ""}</span>
+              <span className="note">{checks.length ? `${checks.length} to check` : ""}</span>
             </div>
             {dirty ? <p className="okline">Save the script to re-check it.</p> : null}
-            {j.script?.warnings.length ? (
+            {checks.length ? (
               <ul className="panel-list">
-                {j.script.warnings.map((w, k) => (
+                {checks.map((w, k) => (
                   <li className="warning" key={k}>
                     <TriangleAlert size={15} aria-hidden />
                     <span>{w}</span>

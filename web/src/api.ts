@@ -74,7 +74,7 @@ export type JobSummary = {
 export type JobDetail = JobSummary & {
   story: Story;
   script: Script | null;
-  voice: {voice: string; speed: number; timed: boolean; scenes: {id: string; seconds: number; frames: number}[]} | null;
+  voice: {engine: string; voice: string; speed: number; timed: boolean; warnings: string[]; scenes: {id: string; seconds: number; frames: number}[]} | null;
   metadata: Record<string, unknown> | null;
   videos: {name: string; url: string; mb: number; at: string}[];
   log: string[];
@@ -107,17 +107,23 @@ export type Meta = {
   icons: Record<string, string>;
   visual_types: VisualType[];
   targets: Target[];
-  defaults: {style: Style; voice: string; speed: number};
+  /** speed is null for engines without a speed control (Chatterbox). */
+  defaults: {style: Style; voice: string; speed: number | null};
 };
+
+export type Engine = "kokoro" | "chatterbox" | "elevenlabs";
 
 export type Settings = {
   style: Style;
   captions: boolean;
+  /** The voice engine and its voice and speed; `engines` holds each engine's own choices. */
+  engine: Engine;
   voice: string;
-  speed: number;
+  speed: number | null;
+  engines: Record<Engine, {voice: string; speed: number | null}>;
   llm: {provider: string; model: string; effort: string | null};
   brand: string;
-  options: {styles: Style[]; voices: string[]; ollama_models: string[]; providers: string[]};
+  options: {styles: Style[]; engines: Engine[]; voices: Record<Engine, string[]>; ollama_models: string[]; providers: string[]};
 };
 
 /** A pasted article: its text is the script writer's only source of facts. */
@@ -186,7 +192,7 @@ export const api = {
     call<Task>("POST", `/jobs/${encodeURIComponent(id)}/publish`, body),
   reject: (id: string) => call<JobSummary>("POST", `/jobs/${encodeURIComponent(id)}/reject`),
   settings: () => call<Settings>("GET", "/settings"),
-  saveSettings: (body: Partial<{style: Style; captions: boolean; voice: string; speed: number; llm_provider: string; llm_model: string; llm_effort: string; brand: string}>) =>
+  saveSettings: (body: Partial<{style: Style; captions: boolean; engine: Engine; voice: string; speed: number; llm_provider: string; llm_model: string; llm_effort: string; brand: string}>) =>
     call<Settings>("PUT", "/settings", body),
   health: () => call<Check[]>("GET", "/health"),
   feeds: () => call<Feeds>("GET", "/feeds"),

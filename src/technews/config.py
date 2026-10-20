@@ -168,9 +168,9 @@ class LLMConfig(BaseModel):
 
 
 class ScriptConfig(BaseModel):
-    # Spoken words for the whole video, outro included. ~150 words/min at speed 1.15 -> 35-50 s.
-    min_words: int = 80
-    max_words: int = 135
+    # Spoken words for the whole video, outro included. At a natural ~2.3-2.6 words/s that's 30-55 s.
+    min_words: int = 75
+    max_words: int = 125
     min_scenes: int = 3
     max_scenes: int = 6  # not counting the outro
     # Extra direction for the writer, e.g. "Dry humour, explain jargon in plain words".
@@ -185,21 +185,73 @@ class ScriptConfig(BaseModel):
 DEFAULT_PRONUNCIATIONS: dict[str, str] = {
     "vs": "versus", "vs.": "versus", "AR": "A R", "EV": "E V", "EVs": "E Vees", "IPO": "I P O",
     "IPOs": "I P Os", "U.S.": "U S", "U.K.": "U K", "E.U.": "E U", "SaaS": "sass",
-    "Xiaomi": "shao-mee", "Huawei": "wah-way", "GPUs": "G P Use", "CPUs": "C P Use",
-    "NPUs": "N P Use", "LLMs": "L L Ems", "RAM": "ram", "ROM": "rom", "SIM": "sim",
+    "Xiaomi": "shao-mee", "Huawei": "wah-way", "RAM": "ram", "ROM": "rom", "SIM": "sim",
 }
+# espeak (Kokoro's phonemizer) only: the other engines say these right and the respellings would trip them.
+KOKORO_PRONUNCIATIONS: dict[str, str] = {
+    "GPUs": "G P Use", "CPUs": "C P Use", "NPUs": "N P Use", "LLMs": "L L Ems",
+}
+
+VoiceEngine = Literal["kokoro", "chatterbox", "elevenlabs"]
+
+
+class ChatterboxConfig(BaseModel):
+    """Resemble AI's Chatterbox (MIT) on the GPU, in its own venv: `technews setup-chatterbox`."""
+
+    model: Literal["standard", "turbo"] = "standard"  # turbo is faster but ignores exaggeration and cfg_weight
+    # "default" = the built-in voice; otherwise a wav file (10+ s of one clean speaker) to clone, either a file
+    # name in data/voices/ or a path. Only clone voices you have the right to use.
+    voice: str = "default"
+    exaggeration: float = Field(default=0.5, ge=0.0, le=2.0)  # emotion; higher also speeds the delivery up
+    cfg_weight: float = Field(default=0.5, ge=0.0, le=1.0)  # lower = slower, more deliberate pacing
+    temperature: float = Field(default=0.8, gt=0.0, le=2.0)
+    # Speaking pace via pitch-preserving time-stretch. The standard model talks ~20% faster than a person reading
+    # news, so it defaults to 0.85; turbo's pace is natural (1.0).
+    pace: float | None = Field(default=None, ge=0.7, le=1.3)
+    retries: int = Field(default=2, ge=0, le=5)  # re-takes when a clip skips or garbles words
+    device: Literal["auto", "cuda", "cpu"] = "auto"
+    torch_backend: str = "cu128"  # PyTorch build for setup: cu128 covers RTX 20-50 series, "cpu" without a GPU
+    words_per_s: float = 2.4  # used to size the script
+    unload_ollama: bool = True  # free the GPU from the script model first (12 GB cards can't hold both)
+
+    @property
+    def effective_pace(self) -> float:
+        return self.pace if self.pace is not None else (1.0 if self.model == "turbo" else 0.85)
+
+
+class ElevenLabsConfig(BaseModel):
+    """ElevenLabs API (paid per character). Key from ``api_key_env`` in .env."""
+
+    voice: str = "EXAVITQu4vr4xnSDxMaL"  # voice id or name; `technews voices` lists the account's voices
+    model: str = "eleven_multilingual_v2"
+    stability: float = Field(default=0.45, ge=0.0, le=1.0)  # lower = more expressive, less consistent
+    similarity_boost: float = Field(default=0.75, ge=0.0, le=1.0)
+    style: float = Field(default=0.15, ge=0.0, le=1.0)
+    speed: float = Field(default=1.0, ge=0.7, le=1.2)
+    stitch: bool = True  # send the neighbouring scenes' text so the delivery flows across scene cuts
+    api_key_env: str = "ELEVENLABS_API_KEY"
+    words_per_s: float = 2.5
 
 
 class VoiceConfig(BaseModel):
-    engine: Literal["kokoro"] = "kokoro"
-    voice: str = "af_heart"
-    speed: float = 1.15
+    engine: VoiceEngine = "kokoro"
+    voice: str = "af_heart"  # Kokoro voice; blend two with "af_heart:0.7+af_bella:0.3"
+    speed: float = 1.05  # Kokoro speed; above ~1.1 it starts to sound rushed
     lang: str = "en-us"
     model_url: str = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.1/kokoro-v1.0.onnx"
     voices_url: str = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.1/voices-v1.0.bin"
+    chatterbox: ChatterboxConfig = Field(default_factory=ChatterboxConfig)
+    elevenlabs: ElevenLabsConfig = Field(default_factory=ElevenLabsConfig)
     lead_in_s: float = 0.12
+    # Silence after each scene, by how its narration ends (a comma flows on, a full stop breathes), then
+    # jittered so the rhythm isn't metronomic. The hook gets a beat more.
     scene_tail_s: float = 0.30
+    pause_jitter_s: float = 0.08
+    hook_pause_s: float = 0.15
     outro_tail_s: float = 1.0
+    # EQ, gentle compression and loudness levelling so every clip sounds like the same mic.
+    master: bool = True
+    loudness_lufs: float = -16.0
     # Extra words the voice gets wrong -> how to say them (whole words, case-sensitive). These are added to
     # DEFAULT_PRONUNCIATIONS. Numbers, money ($5B), multipliers (3x) and units (120Hz) are handled automatically.
     pronunciations: dict[str, str] = Field(default_factory=dict, validate_default=True)
@@ -208,6 +260,24 @@ class VoiceConfig(BaseModel):
     @classmethod
     def _merge_defaults(cls, v: dict[str, str]) -> dict[str, str]:
         return {**DEFAULT_PRONUNCIATIONS, **v}
+
+    def pronunciations_for(self, engine: str | None = None) -> dict[str, str]:
+        if (engine or self.engine) == "kokoro":
+            return {**KOKORO_PRONUNCIATIONS, **self.pronunciations}
+        return self.pronunciations
+
+    @property
+    def active_voice(self) -> str:
+        return {"kokoro": self.voice, "chatterbox": self.chatterbox.voice, "elevenlabs": self.elevenlabs.voice}[self.engine]
+
+    @property
+    def words_per_s(self) -> float:
+        """Speaking pace of the active engine, for sizing the script."""
+        if self.engine == "chatterbox":
+            return self.chatterbox.words_per_s
+        if self.engine == "elevenlabs":
+            return self.elevenlabs.words_per_s * self.elevenlabs.speed
+        return 2.5 * self.speed / 1.15
 
 
 # --------------------------------------------------------------------------- render

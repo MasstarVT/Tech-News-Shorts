@@ -144,6 +144,20 @@ def test_settings_keep_config_comments(env):
         update_config({"paths.output_dir": "/tmp"})
 
 
+def test_settings_voice_engine(env):
+    c = TestClient(create_app(background=False))
+    s = c.get("/api/settings").json()
+    assert s["engine"] == "kokoro" and set(s["options"]["voices"]) == {"kokoro", "chatterbox", "elevenlabs"}
+    assert s["options"]["voices"]["chatterbox"] == ["default"]
+    kokoro_speed = s["speed"]
+    s = c.put("/api/settings", json={"engine": "elevenlabs", "voice": "Sarah", "speed": 1.1}).json()
+    assert (s["engine"], s["voice"], s["speed"]) == ("elevenlabs", "Sarah", 1.1)
+    assert s["engines"]["kokoro"]["speed"] == kokoro_speed  # the other engines keep their own settings
+    s = c.put("/api/settings", json={"engine": "chatterbox", "voice": "default", "speed": 1.3}).json()
+    assert (s["engine"], s["speed"]) == ("chatterbox", None)  # Chatterbox has no speed control
+    assert c.put("/api/settings", json={"engine": "elevenlabs", "speed": 1.9}).status_code == 422
+
+
 def test_feeds_save_over_the_defaults(env):
     _, _, cfg_file = env
     c = TestClient(create_app(background=False))

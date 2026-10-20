@@ -27,6 +27,7 @@ from ..news.sources import discover_feed, site_name, story_id
 from ..render.remotion import COMPOSITIONS
 from ..script.normalize import LIMITS, review_script
 from ..script.schema import ICONS_JSON, icon_names
+from ..voice.chatterbox import reference_voices
 from .auto import AutoScheduler, AutoSettings, AutoStore, next_run
 from .settings import config_path, update_config
 from .worker import Task, Worker
@@ -39,6 +40,7 @@ FILE_TYPES = {".mp4": "video/mp4", ".wav": "audio/wav", ".png": "image/png", ".j
 STAGE_ORDER = ("script", "voice", "render")
 STORY_TTL_S = 20 * 60
 FALLBACK_VOICES = ["af_heart", "af_bella", "am_michael", "am_fenrir", "am_puck", "bf_emma", "bm_george"]
+ENGINES = ("kokoro", "chatterbox", "elevenlabs")
 COOKIE = "tn_token"
 ARTICLE_MIN, ARTICLE_MAX = 200, 20000  # characters of pasted article text
 
@@ -104,6 +106,7 @@ class PublishIn(BaseModel):
 class SettingsIn(BaseModel):
     style: Literal["blueprint", "kinetic", "slideshow"] | None = None
     captions: bool | None = None
+    engine: Literal["kokoro", "chatterbox", "elevenlabs"] | None = None
     voice: str | None = None
     speed: float | None = Field(default=None, ge=0.5, le=2.0)
     llm_provider: str | None = None
@@ -237,7 +240,7 @@ def create_app(token: str | None = None, *, background: bool = True) -> FastAPI:
     app = FastAPI(title="Tech News Shorts", docs_url="/api/docs", openapi_url="/api/openapi.json", lifespan=lifespan)
     worker = Worker()
     stories = StoryCache()
-    voices_cache: dict[str, list[str]] = {}
+    voices_cache: dict[str, list] = {}
     auto_store = AutoStore(current_config().paths.data / "web" / "auto.json")
     app.state.worker = worker
     app.state.auto_store = auto_store
@@ -354,7 +357,8 @@ def create_app(token: str | None = None, *, background: bool = True) -> FastAPI:
         data["script"] = job.load_script().model_dump(mode="json") if job.has_script() else None
         if job.has_voice():
             track = job.load_voice()
-            data["voice"] = {"voice": track.voice, "speed": track.speed, "timed": track.timed,
+            data["voice"] = {"engine": track.engine, "voice": track.voice, "speed": track.speed, "timed": track.timed,
+                             "warnings": track.warnings,
                              "scenes": [{"id": s.id, "seconds": round(s.duration_s, 2), "frames": s.frames} for s in track.scenes]}
         else:
             data["voice"] = None
@@ -591,7 +595,7 @@ def create_app(token: str | None = None, *, background: bool = True) -> FastAPI:
             "icons": json.loads(ICONS_JSON.read_text(encoding="utf-8")),  # friendly name -> lucide icon
             "visual_types": ["headline", "stat", "icon", "versus", "bullets", "outro"],
             "targets": [t.model_dump() for t in cfg.publish.targets],
-            "defaults": {"style": cfg.render.style, "voice": cfg.voice.voice, "speed": cfg.voice.speed},
+            "defaults": {"style": cfg.render.style, "voice": cfg.voice.active_voice, "speed": engine_speed(cfg)},
         }
 
     # ------------------------------------------------------------------ settings + health
@@ -606,19 +610,43 @@ def create_app(token: str | None = None, *, background: bool = True) -> FastAPI:
         except (httpx.HTTPError, ValueError, KeyError):
             return []
 
-    def voices(cfg: AppConfig) -> list[str]:
-        if "list" in voices_cache:
-            return voices_cache["list"]
+    def kokoro_voices(cfg: AppConfig) -> list[str]:
+        if "kokoro" in voices_cache:
+            return voices_cache["kokoro"]
         from ..voice.kokoro import KokoroEngine, model_paths
 
         if not all(p.exists() for p in model_paths(cfg)):
             return FALLBACK_VOICES
         try:
-
-            voices_cache["list"] = sorted(KokoroEngine(cfg).voices())
+            voices_cache["kokoro"] = sorted(KokoroEngine(cfg).voices())
         except Exception:
             return FALLBACK_VOICES
-        return voices_cache["list"]
+        return voices_cache["kokoro"]
+
+    def elevenlabs_voices(cfg: AppConfig) -> list[dict]:
+        """The account's voices, fetched once per server run (none without an API key)."""
+        if "elevenlabs" not in voices_cache:
+            from ..voice.elevenlabs import ElevenLabsError, list_voices
+
+            try:
+                voices_cache["elevenlabs"] = list_voices(cfg)
+            except ElevenLabsError:
+                return []  # no key yet: cheap to ask again
+            except httpx.HTTPError:
+                voices_cache["elevenlabs"] = []  # offline: don't stall every settings load on it
+        return voices_cache["elevenlabs"]
+
+    def elevenlabs_name(cfg: AppConfig, voice: str) -> str:
+        return next((v["name"] for v in elevenlabs_voices(cfg) if v["voice_id"] == voice), voice)
+
+    def engine_speed(cfg: AppConfig, engine: str | None = None) -> float | None:
+        engine = engine or cfg.voice.engine
+        return {"kokoro": cfg.voice.speed, "elevenlabs": cfg.voice.elevenlabs.speed}.get(engine)
+
+    def engine_voice(cfg: AppConfig, engine: str) -> str:
+        if engine == "elevenlabs":
+            return elevenlabs_name(cfg, cfg.voice.elevenlabs.voice)
+        return {"kokoro": cfg.voice.voice, "chatterbox": cfg.voice.chatterbox.voice}[engine]
 
     @app.get("/api/settings")
     def get_settings():
@@ -627,21 +655,29 @@ def create_app(token: str | None = None, *, background: bool = True) -> FastAPI:
         return {
             "style": cfg.render.style,
             "captions": cfg.render.captions.enabled,
-            "voice": cfg.voice.voice,
-            "speed": cfg.voice.speed,
+            "engine": cfg.voice.engine,
+            "voice": engine_voice(cfg, cfg.voice.engine),
+            "speed": engine_speed(cfg),
+            "engines": {e: {"voice": engine_voice(cfg, e), "speed": engine_speed(cfg, e)} for e in ENGINES},
             "llm": {"provider": route.provider if route else "null", "model": route.model if route else "",
                     "effort": route.effort if route else None},
             "brand": cfg.brand.name,
-            "options": {"styles": list(COMPOSITIONS), "voices": voices(cfg), "ollama_models": ollama_models(cfg),
+            "options": {"styles": list(COMPOSITIONS), "engines": list(ENGINES),
+                        "voices": {"kokoro": kokoro_voices(cfg), "chatterbox": reference_voices(cfg),
+                                   "elevenlabs": [v["name"] for v in elevenlabs_voices(cfg)]},
+                        "ollama_models": ollama_models(cfg),
                         "providers": list(cfg.llm.providers)},
         }
 
     @app.put("/api/settings")
     def put_settings(body: SettingsIn):
-        mapping = {"style": "render.style", "captions": "render.captions.enabled", "voice": "voice.voice",
-                   "speed": "voice.speed", "llm_provider": "llm.tasks.script.provider",
+        engine = body.engine or current_config().voice.engine
+        voice_key = {"kokoro": "voice.voice", "chatterbox": "voice.chatterbox.voice", "elevenlabs": "voice.elevenlabs.voice"}
+        speed_key = {"kokoro": "voice.speed", "elevenlabs": "voice.elevenlabs.speed"}  # Chatterbox has no speed
+        mapping = {"style": "render.style", "captions": "render.captions.enabled", "engine": "voice.engine",
+                   "voice": voice_key[engine], "speed": speed_key.get(engine, ""), "llm_provider": "llm.tasks.script.provider",
                    "llm_model": "llm.tasks.script.model", "llm_effort": "llm.tasks.script.effort", "brand": "brand.name"}
-        changes = {mapping[k]: v for k, v in body.model_dump(exclude_unset=True).items()}
+        changes = {mapping[k]: v for k, v in body.model_dump(exclude_unset=True).items() if mapping[k]}
         if "llm.tasks.script.effort" in changes and changes["llm.tasks.script.effort"] == "":
             changes["llm.tasks.script.effort"] = None
         try:

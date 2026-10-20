@@ -71,8 +71,8 @@ def stage_voice(job: Job, cfg: AppConfig, voice: str | None = None, speed: float
     hooks = hooks or Hooks()
     track = synthesize_job(job, cfg, voice=voice, speed=speed, progress=hooks.voice_progress,
                            download_progress=hooks.download_progress)
-    job.mark("voice", "voiced", voice=track.voice, seconds=round(track.duration_s, 1), timed=track.timed,
-             narration=narration_key(job.load_script()))
+    job.mark("voice", "voiced", engine=track.engine, voice=track.voice, seconds=round(track.duration_s, 1),
+             timed=track.timed, warnings=len(track.warnings), narration=narration_key(job.load_script()))
 
 
 def stage_render(job: Job, cfg: AppConfig, hooks: Hooks | None = None) -> None:

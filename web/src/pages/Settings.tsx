@@ -1,14 +1,24 @@
 import {RefreshCw, Search, X} from "lucide-react";
 import React, {useEffect, useState} from "react";
-import {api, type Feed, type Settings} from "../api";
+import {api, type Engine, type Feed, type Settings} from "../api";
 import {Field, Light, Switch} from "../components/ui";
 import {useLoad} from "../lib";
 
-type Form = {style: string; captions: boolean; voice: string; speed: number; llm_provider: string; llm_model: string; thinking: boolean; brand: string};
+type Form = {style: string; captions: boolean; engine: Engine; voice: string; speed: number | null; llm_provider: string; llm_model: string; thinking: boolean; brand: string};
+
+const ENGINES: Record<Engine, {label: string; help: string; speed?: [number, number]}> = {
+  kokoro: {label: "Kokoro (fast, offline)", help: "af_heart, af_bella, am_michael and bm_george sound the most natural.", speed: [0.8, 1.4]},
+  chatterbox: {
+    label: "Chatterbox (expressive, your GPU)",
+    help: "Install once with `technews setup-chatterbox`. To clone a voice, add a 10-20 s clip to data/voices.",
+  },
+  elevenlabs: {label: "ElevenLabs (most lifelike, paid)", help: "Needs ELEVENLABS_API_KEY in .env. Billed per character.", speed: [0.7, 1.2]},
+};
 
 const toForm = (s: Settings): Form => ({
   style: s.style,
   captions: s.captions,
+  engine: s.engine,
   voice: s.voice,
   speed: s.speed,
   llm_provider: s.llm.provider,
@@ -187,8 +197,9 @@ export const SettingsPage: React.FC = () => {
       const res = await api.saveSettings({
         style: form.style as Settings["style"],
         captions: form.captions,
+        engine: form.engine,
         voice: form.voice,
-        speed: form.speed,
+        speed: form.speed ?? undefined,
         llm_provider: form.llm_provider,
         llm_model: form.llm_model,
         llm_effort: form.llm_provider === "ollama" ? (form.thinking ? "" : "none") : undefined,
@@ -249,25 +260,54 @@ export const SettingsPage: React.FC = () => {
                     </select>
                   </div>
                   <div className="field">
+                    <label className="label" htmlFor="engine">
+                      Voice engine
+                    </label>
+                    <select
+                      id="engine"
+                      value={form.engine}
+                      onChange={(e) => {
+                        const engine = e.target.value as Engine;
+                        set({engine, voice: settings.data!.engines[engine].voice, speed: settings.data!.engines[engine].speed});
+                      }}
+                    >
+                      {opts.engines.map((e) => (
+                        <option key={e} value={e}>
+                          {ENGINES[e].label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="field">
                     <label className="label" htmlFor="voice">
                       Voice
                     </label>
                     <select id="voice" value={form.voice} onChange={(e) => set({voice: e.target.value})}>
-                      {Array.from(new Set([form.voice, ...opts.voices])).map((v) => (
+                      {Array.from(new Set([form.voice, ...opts.voices[form.engine]])).map((v) => (
                         <option key={v} value={v}>
                           {v}
                         </option>
                       ))}
                     </select>
-                    <span className="help">af_heart, af_bella, am_michael and bm_george sound the most natural.</span>
+                    <span className="help">{ENGINES[form.engine].help}</span>
                   </div>
-                  <div className="field">
-                    <label className="label" htmlFor="speed">
-                      <span>Speaking speed</span>
-                      <span className="counter">{form.speed.toFixed(2)}×</span>
-                    </label>
-                    <input id="speed" type="range" min={0.8} max={1.4} step={0.05} value={form.speed} onChange={(e) => set({speed: Number(e.target.value)})} />
-                  </div>
+                  {ENGINES[form.engine].speed && form.speed !== null ? (
+                    <div className="field">
+                      <label className="label" htmlFor="speed">
+                        <span>Speaking speed</span>
+                        <span className="counter">{form.speed.toFixed(2)}×</span>
+                      </label>
+                      <input
+                        id="speed"
+                        type="range"
+                        min={ENGINES[form.engine].speed![0]}
+                        max={ENGINES[form.engine].speed![1]}
+                        step={0.05}
+                        value={form.speed}
+                        onChange={(e) => set({speed: Number(e.target.value)})}
+                      />
+                    </div>
+                  ) : null}
                   <div className="field">
                     <label className="label" htmlFor="provider">
                       Script writer

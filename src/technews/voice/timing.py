@@ -9,6 +9,7 @@ from __future__ import annotations
 import bisect
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from typing import NamedTuple
 
 import numpy as np
 
@@ -22,6 +23,16 @@ class WordTime:
     text: str
     start: float  # seconds
     end: float
+
+
+class Take(NamedTuple):
+    """One scene as an engine spoke it."""
+
+    audio: np.ndarray
+    sr: int
+    words: list[WordTime]  # one per speech token
+    timed: bool  # False when the timings are estimates
+    warnings: list[str]
 
 
 @dataclass
