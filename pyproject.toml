@@ -34,6 +34,11 @@ publish = [
     "google-api-python-client>=2.140",
     "google-auth-oauthlib>=1.2",
 ]
+web = [
+    "fastapi>=0.115",
+    "ruamel-yaml>=0.18",
+    "uvicorn>=0.30",
+]
 
 [project.scripts]
 technews = "technews.cli:app"

@@ -5,11 +5,12 @@ Turns the day's tech news into animated vertical shorts for YouTube Shorts and T
 1. **Picks a story.** It reads tech RSS feeds and the Hacker News front page, groups reports of the same news, and ranks them by freshness, how many outlets cover it, Hacker News points and your topic keywords. Stories it already covered are skipped.
 2. **Writes the script.** An LLM of your choice turns the article into 30–45 seconds of narration plus a graphic for each line. The default is a local model through Ollama. It may only use facts from the article, and any stat graphic whose number isn't in the article is replaced.
 3. **Narrates it.** [Kokoro](https://github.com/thewh1teagle/kokoro-onnx) TTS runs on the CPU and reports when every word is spoken, so captions and the mascot's mouth stay in sync. Money, model numbers and units are rewritten so they're read correctly ("$5B" → "5 billion dollars", "RTX 5090" → "fifty ninety").
-4. **Animates it.** [Remotion](https://www.remotion.dev) renders a 1080×1920 video in a blueprint style:
-   - **Byte**, a line-drawn robot, talks in a speech bubble that shows the words as they're spoken.
-   - Each scene is drawn stroke by stroke: a headline, a stat that counts up, an icon in a detail circle, a side-by-side comparison, or a checklist.
-   - A title block shows the source, date and "sheet 2/6" progress.
+4. **Animates it.** [Remotion](https://www.remotion.dev) renders a 1080×1920 video. The default `kinetic` style:
+   - Big captions pop in word by word as they're spoken, with the current word on a colour slab.
+   - Each scene gets its own colour and a springy graphic: a headline that rises in, a stat whose digits roll like an odometer, an icon in orbit, a versus slam, or a checklist.
+   - A slanted colour wipe hides every cut, and **Byte**, the channel's robot, talks in the header and waves in the outro.
    - Swish and stamp sound effects are synthesized (no licensing).
+   - Other styles: `blueprint` (line drawings drawn stroke by stroke, Byte in a speech bubble) and `slideshow` (plain baseline). Set `render.style`, pick it in the web app, or run `technews render --style blueprint`.
 5. **Hands it over.** It exports the video plus ready-to-paste captions, posts a preview to Discord so you can review it on your phone, and can upload to YouTube and to TikTok's draft inbox.
 
 ## Quick start (Windows)
@@ -30,6 +31,7 @@ The first run downloads the Kokoro voice model (~350 MB) and Remotion's headless
 
 | Command | What it does |
 |---|---|
+| `technews web` | Open the web app (see below) |
 | `technews news` | Ranked candidate stories for today |
 | `technews make` | Story → script → voice → video. `--pick 3` uses the 3rd story, `--url <link>` any article, `--llm null` skips the AI, `--publish` posts when done |
 | `technews script / voice / render <job>` | Re-run one stage of a job (`latest` is the default job) |
@@ -40,6 +42,21 @@ The first run downloads the Kokoro voice model (~350 MB) and Remotion's headless
 | `technews jobs` | Recent jobs and their status |
 | `technews voices` / `technews say "text"` | List Kokoro voices / audition a line |
 | `technews auth youtube` / `technews auth tiktok` | Connect accounts |
+
+### Web app
+
+`technews web` opens a browser app at http://127.0.0.1:8765 that does everything the commands do:
+
+- **Today**: the ranked wire of stories. Press *Make short* on one, or paste an article link.
+- **Jobs / rundown**: each short as a TV-style rundown. Scenes are drawn to their real length, and the row on air lights up while the video plays. Edit narration and graphics, then save; the fact check runs again. Re-record the voice, render in any style, and publish (with a dry run).
+- **Auto**: make one short a day at a set time. Either hold it for your approval or publish it straight away.
+- **Settings**: default style, voice, speed and script model (written to `config.yaml`, comments kept), plus the `doctor` health checks.
+
+The tally in the top bar shows what's running: *Standby* while writing or voicing, *On air* while rendering or publishing. Only one job runs at a time; the rest queue.
+
+Build the frontend once with `cd web && npm install && npm run build`. For frontend work, run `npm run dev` in `web/` (port 5173, forwards `/api` to `technews web`).
+
+On a server (VPS), set `TECHNEWS_WEB_TOKEN=<long random string>` in `.env` and start it with `technews web --host 0.0.0.0 --no-open`. The app then asks for that token. Put it behind HTTPS (a reverse proxy such as Caddy) before exposing it to the internet. Auto mode only runs while the app is running.
 
 ### Fixing a video before posting
 

@@ -44,6 +44,7 @@ voice:
   pronunciations: {}               # extra words the voice gets wrong, e.g. {Asus: ay-soos}
 
 render:
+  style: kinetic                   # kinetic | blueprint | slideshow (animation style)
   crf: 23                          # lower = bigger file, higher quality
   concurrency: null                # e.g. "8" or "50%"
   gl: null                         # "angle" can speed up renders on Windows

@@ -40,3 +40,7 @@ Thumbs.db
 CLAUDE.md
 claude.md
 graphify-out/
+
+# tool caches and scratch (Remotion's Chrome download, design-review screenshots)
+.remotion/
+.impeccable/

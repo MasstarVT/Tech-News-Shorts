@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
 import unicodedata
 from datetime import datetime
 from pathlib import Path
@@ -170,5 +171,8 @@ class Job:
         handler = logging.FileHandler(self.log_path, encoding="utf-8")
         handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s", "%H:%M:%S"))
         handler.setLevel(logging.INFO)
+        # Only this thread's records: the web app runs jobs on a worker thread next to request logging.
+        ident = threading.get_ident()
+        handler.addFilter(lambda record: record.thread == ident)
         logging.getLogger().addHandler(handler)
         return handler

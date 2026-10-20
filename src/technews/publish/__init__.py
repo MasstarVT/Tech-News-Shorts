@@ -31,15 +31,16 @@ def get_publisher(platform: str, account_id: str) -> Publisher:
 def build_metadata(job: Job, cfg: AppConfig) -> dict:
     script = job.load_script()
     story = job.load_story()
-    credit = f"Source: {story.source} - {story.url}"
+    origin = " - ".join(x for x in (story.source, story.url) if x)
+    credit = f"Source: {origin}" if origin else ""
     if story.also_in:
         credit += f"\nAlso reported by {', '.join(story.also_in)}."
     tags = " ".join(f"#{h}" for h in script.hashtags)
     meta = {
         "youtube": {
             "title": script.title[:100],
-            "description": f"{script.description}\n\n{credit}\n\nScript written with AI from the source article; "
-                           f"narration is an AI voice.".strip(),
+            "description": "\n\n".join(x for x in (script.description, credit.strip(), "Script written with AI from the "
+                                     "source article; narration is an AI voice.") if x),
             "hashtags": script.hashtags,
         },
         "tiktok": {"caption": f"{script.title} {tags}".strip()[:2200], "hashtags": script.hashtags},

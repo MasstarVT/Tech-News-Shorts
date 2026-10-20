@@ -1,10 +1,11 @@
 // Renders one job: node render.mjs --props <props.json> --public-dir <job folder> --out <video.mp4>
 // Optional: --still <frame> (writes a PNG instead), --browser <chrome-headless-shell path>,
-//           --concurrency <n|50%>, --crf <n>, --gl <angle|egl|swiftshader|...>
+//           --concurrency <n|50%>, --crf <n>, --gl <angle|egl|swiftshader|...>,
+//           --port <n> (the bundle server's port; pass a free one so an open Remotion Studio can't answer instead)
 // Prints one JSON object per line ({"stage": ..., "progress": 0..1}) so the Python side can show progress.
 
 import {bundle} from "@remotion/bundler";
-import {ensureBrowser, renderMedia, renderStill, selectComposition} from "@remotion/renderer";
+import {renderMedia, renderStill, selectComposition} from "@remotion/renderer";
 import fs from "node:fs";
 import path from "node:path";
 import {fileURLToPath} from "node:url";
@@ -39,6 +40,7 @@ const main = async () => {
   const inputProps = args.props ? JSON.parse(fs.readFileSync(args.props, "utf8")) : {};
   const browserExecutable = args.browser || process.env.REMOTION_BROWSER_EXECUTABLE || null;
   const chromiumOptions = args.gl ? {gl: args.gl} : {};
+  const port = args.port ? Number(args.port) : null;
 
   let lastBundle = -1;
   const serveUrl = await bundle({
@@ -53,19 +55,13 @@ const main = async () => {
     },
   });
 
-  // First run on a new machine downloads chrome-headless-shell (~100 MB); report it instead of hanging silently.
-  const onBrowserDownload = () => {
-    log({stage: "browser-download", progress: 0});
-    return {version: null, onProgress: ({percent}) => log({stage: "browser-download", progress: percent})};
-  };
-  await ensureBrowser({browserExecutable, onBrowserDownload});
-
   const composition = await selectComposition({
     serveUrl,
     id: args.composition || "NewsShort",
     inputProps,
     browserExecutable,
     chromiumOptions,
+    port,
   });
   log({stage: "composition", durationInFrames: composition.durationInFrames, fps: composition.fps});
 
@@ -80,7 +76,7 @@ const main = async () => {
     if (many) fs.mkdirSync(path.resolve(args.out), {recursive: true});
     for (const frame of frames) {
       const output = many ? path.join(path.resolve(args.out), `frame-${String(frame).padStart(4, "0")}.png`) : path.resolve(args.out);
-      await renderStill({composition, serveUrl, output, frame, inputProps, browserExecutable, chromiumOptions, imageFormat: "png"});
+      await renderStill({composition, serveUrl, output, frame, inputProps, browserExecutable, chromiumOptions, port, imageFormat: "png"});
       log({stage: "still", out: output, frame});
     }
     log({stage: "done", out: path.resolve(args.out)});
@@ -96,13 +92,20 @@ const main = async () => {
     inputProps,
     browserExecutable,
     chromiumOptions,
+    port,
     concurrency: args.concurrency ? (String(args.concurrency).endsWith("%") ? args.concurrency : Number(args.concurrency)) : null,
     crf: args.crf ? Number(args.crf) : 23,
     pixelFormat: "yuv420p",
     audioCodec: "aac",
     audioBitrate: "192k",
     overwrite: true,
-    onBrowserDownload,
+    onBrowserDownload: () => {
+      log({stage: "browser-download", progress: 0});
+      return {
+        version: null,
+        onProgress: ({percent}) => log({stage: "browser-download", progress: percent}),
+      };
+    },
     onProgress: ({progress, renderedFrames, encodedFrames}) => {
       const pct = Math.floor(progress * 100);
       if (pct !== lastPct) {

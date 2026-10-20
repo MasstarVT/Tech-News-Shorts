@@ -21,7 +21,8 @@ def notify(job: Job, cfg: AppConfig, results: dict | None = None) -> bool:
         return False
     script = job.load_script()
     story = job.load_story()
-    lines = [f"**{script.title}**", f"Source: {story.source} <{story.url}>"]
+    origin = " ".join(x for x in (story.source, f"<{story.url}>" if story.url else "") if x)
+    lines = [f"**{script.title}**"] + ([f"Source: {origin}"] if origin else [])
     if script.warnings:
         lines.append("Check before posting:")
         lines += [f"- {w}" for w in script.warnings[:6]]

@@ -4,8 +4,8 @@ An AI voice reads the narration while a line-drawn robot host and simple bluepri
 Facts:
 - Use only facts stated in the ARTICLE text. Never add numbers, names, dates, prices, quotes or claims that are not in it.
 - If the article is unclear about something, leave it out rather than guessing.
-- Credit the outlet once, naturally, if it helps ("according to {{ source }}").
-
+{% if source %}- Credit the outlet once, naturally, if it helps ("according to {{ source }}").
+{% endif %}
 Writing:
 - {{ min_words }}-{{ max_words }} spoken words in total, outro included. Short sentences. Plain spoken English, present tense.
 - Scene 1 is the hook: say the news itself in one striking sentence. Don't start with "In today's news", "Hey guys" or a question.

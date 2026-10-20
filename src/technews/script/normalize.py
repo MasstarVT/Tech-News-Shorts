@@ -161,3 +161,31 @@ def build_script(draft: dict, story: Story, cfg: AppConfig, llm: str) -> Script:
         llm=llm,
         warnings=warnings,
     )
+
+
+# Field limits the writer enforces; the web editor uses the same ones.
+LIMITS = {"headline": 60, "tag": 14, "stat_value": 9, "stat_label": 40, "icon_text": 46, "versus_side": 22,
+          "versus_label": 40, "bullet": 34, "bullets": 3}
+
+
+def review_script(script: Script, story: Story, cfg: AppConfig) -> list[str]:
+    """Fact and length checks for a hand-edited script (the writer's checks, minus the auto-fixes).
+
+    Unlike ``build_script`` nothing is swapped: an unbacked stat stays, but it gets a warning."""
+    warnings: list[str] = []
+    context = story.context + " " + story.title
+    for s in script.scenes:
+        missing = unverified_numbers(s.narration, context)
+        if missing:
+            warnings.append(f"Check {', '.join(missing)} in \"{cap(s.narration, 60)}\" - not found in the article")
+        if (s.visual.type == "stat" and cfg.script.verify_numbers
+                and unverified_numbers(s.visual.value, context, allow_single_digits=False)):
+            warnings.append(f"Stat '{s.visual.value}' isn't in the article")
+    total = script.word_count
+    if total > cfg.script.max_words + 15:
+        warnings.append(f"Narration is long ({total} words); the video may run past a minute")
+    if total < cfg.script.min_words - 20:
+        warnings.append(f"Narration is short ({total} words)")
+    if len(story.context) < 300:
+        warnings.append("Only a short summary was available for this story; check the facts")
+    return warnings

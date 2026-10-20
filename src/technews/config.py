@@ -220,6 +220,9 @@ class CaptionConfig(BaseModel):
 
 
 class RenderConfig(BaseModel):
+    # Animation style = Remotion composition (video/src/Root.tsx): blueprint (line drawings + Byte's
+    # speech bubble), kinetic (karaoke captions + springy graphics), slideshow (plain baseline).
+    style: Literal["blueprint", "kinetic", "slideshow"] = "kinetic"
     fps: int = 30
     crf: int = 23  # flat graphics stay crisp; keeps a 40 s short under Discord's 10 MB webhook limit
     concurrency: str | None = None  # e.g. "8" or "50%"; Remotion picks a default when unset

@@ -246,14 +246,23 @@ def voice_cmd(
 
 
 @app.command("render")
-def render_cmd(job_ref: str = typer.Argument("latest")) -> None:
+def render_cmd(
+    job_ref: str = typer.Argument("latest"),
+    style: str = typer.Option(None, help="Animation style override: blueprint, kinetic or slideshow"),
+) -> None:
     """Render a job's video from its script and voice."""
     from .pipeline import stage_render
+    from .render.remotion import COMPOSITIONS
 
+    cfg = load_config()
+    if style:
+        if style not in COMPOSITIONS:
+            _fail(f"Unknown style {style!r} - pick one of: {', '.join(COMPOSITIONS)}")
+        cfg = cfg.model_copy(update={"render": cfg.render.model_copy(update={"style": style})})
     job = _job(job_ref)
     with _UI() as ui:
         ui.stage("Rendering the video")
-        stage_render(job, load_config(), ui.hooks())
+        stage_render(job, cfg, ui.hooks())
     _done(job)
 
 
@@ -282,6 +291,20 @@ def preview(job_ref: str = typer.Argument("latest")) -> None:
         _fail("npx not found - install Node 20+")
     args = [npx, "remotion", "studio", "src/index.ts", f"--props={job.props_path}", f"--public-dir={job.dir}"]
     subprocess.call(args, cwd=cfg.paths.video, shell=sys.platform == "win32")
+
+
+@app.command()
+def web(
+    host: str = typer.Option("127.0.0.1", help="Address to listen on; anything but localhost needs TECHNEWS_WEB_TOKEN in .env"),
+    port: int = typer.Option(8765, help="Port (3000 is left free for Remotion Studio)"),
+    open_browser: bool = typer.Option(True, "--open/--no-open", help="Open the app in your browser"),
+) -> None:
+    """Open the web app: stories, jobs, script editing, renders, publishing and auto mode."""
+    try:
+        from .web.app import serve
+    except ImportError:
+        _fail("The web app needs its extras: uv sync --extra web")
+    serve(host, port, open_browser)
 
 
 @app.command("publish")

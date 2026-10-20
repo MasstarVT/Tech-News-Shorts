@@ -1,8 +1,8 @@
-SOURCE: {{ source }}{% if also_in %} (also reported by {{ also_in }}){% endif %}
-PUBLISHED: {{ published }}
+{% if source %}SOURCE: {{ source }}{% if also_in %} (also reported by {{ also_in }}){% endif %}
+{% endif %}PUBLISHED: {{ published }}
 HEADLINE: {{ title }}
-URL: {{ url }}
-
+{% if url %}URL: {{ url }}
+{% endif %}
 ARTICLE:
 """
 {{ context }}

@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import shutil
+import socket
 import subprocess
 import sys
 from collections.abc import Callable
@@ -18,8 +19,20 @@ log = logging.getLogger(__name__)
 CREATE_FLAGS = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 
 
+# render.style -> composition id in video/src/Root.tsx
+COMPOSITIONS = {"blueprint": "NewsShort", "kinetic": "NewsShortKinetic", "slideshow": "NewsShortSlideshow"}
+
+
 class RenderError(RuntimeError):
     pass
+
+
+def free_port() -> int:
+    """A port nothing listens on. Remotion's own pick can land on 3000 while Studio holds it, and the
+    headless browser then loads Studio instead of the bundle."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
 
 
 def node_path() -> str | None:
@@ -43,7 +56,7 @@ def run_render(
 ) -> Path:
     check_setup(cfg)
     args = [node_path() or "node", str(cfg.paths.video / "render.mjs"), "--props", str(props_path),
-            "--public-dir", str(public_dir), "--out", str(out)]
+            "--public-dir", str(public_dir), "--out", str(out), "--composition", COMPOSITIONS[cfg.render.style], "--port", str(free_port())]
     if still is not None:
         args += ["--still", str(still)]
     browser = cfg.render.browser_executable or os.environ.get("REMOTION_BROWSER_EXECUTABLE")

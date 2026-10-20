@@ -21,7 +21,7 @@ export const sceneStarts = (scenes: Scene[]) => {
   });
 };
 
-const mouthAt = (scene: Scene | undefined, local: number) => {
+export const mouthAt = (scene: Scene | undefined, local: number) => {
   if (!scene || !scene.mouth.length) return 0;
   const at = (k: number) => scene.mouth[Math.min(scene.mouth.length - 1, Math.max(0, k))] ?? 0;
   return (at(local - 1) + 2 * at(local) + at(local + 1)) / 4;

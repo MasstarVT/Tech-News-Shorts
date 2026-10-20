@@ -8,7 +8,7 @@ import logging
 import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import feedparser
 import httpx
@@ -152,6 +152,47 @@ def make_client(cfg: AppConfig) -> httpx.Client:
         timeout=cfg.news.timeout_s,
         follow_redirects=True,
     )
+
+
+FEED_TYPES = ("application/rss+xml", "application/atom+xml")
+# Where sites usually keep a feed they don't advertise in their HTML.
+COMMON_FEEDS = ("/feed/", "/rss/", "/feed.xml", "/rss.xml", "/atom.xml", "/index.xml")
+
+
+def _alternate_feed(page: str, base: str) -> str:
+    """The first feed a web page advertises with <link rel="alternate" type="application/rss+xml" href=...>."""
+    for tag in re.findall(r"<link\b[^>]*>", page, re.I):
+        attrs = {k.lower(): v for k, _, v in re.findall(r"([\w-]+)\s*=\s*([\"'])(.*?)\2", tag, re.S)}
+        rels = attrs.get("rel", "").lower().split()
+        if "alternate" in rels and attrs.get("type", "").lower() in FEED_TYPES and attrs.get("href"):
+            return urljoin(base, html.unescape(attrs["href"]))
+    return ""
+
+
+def discover_feed(url: str, cfg: AppConfig) -> tuple[str, str, int]:
+    """Find the feed behind ``url``: the feed itself, the one a site page links, or one at a usual path.
+    Returns (feed url, feed title, entry count). Raises httpx.HTTPError, or ValueError when there's no feed."""
+    with make_client(cfg) as client:
+        r = client.get(url)
+        r.raise_for_status()
+        parsed = feedparser.parse(r.content)
+        if not parsed.entries:
+            page = str(r.url)
+            link = _alternate_feed(r.text, page)
+            for candidate in ([link] if link else []) + [urljoin(page, p) for p in COMMON_FEEDS]:
+                try:
+                    r = client.get(candidate)
+                    r.raise_for_status()
+                except httpx.HTTPError:
+                    continue
+                parsed = feedparser.parse(r.content)
+                if parsed.entries:
+                    url = candidate
+                    break
+            else:
+                raise ValueError("No RSS or Atom feed found there. If the site has one, paste the feed's own link.")
+    name = html_to_text(parsed.feed.get("title") or "") or site_name(url)
+    return url, name[:60], len(parsed.entries)
 
 
 def fetch_all(cfg: AppConfig) -> list[Story]:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -9,7 +10,7 @@ from dataclasses import dataclass, field
 from . import news
 from .config import AppConfig
 from .jobs import Job
-from .models import Story
+from .models import Script, Story
 from .news import history
 
 log = logging.getLogger(__name__)
@@ -42,6 +43,12 @@ def choose_story(cfg: AppConfig, pick: int | None = None, url: str | None = None
     return ranked[index]
 
 
+def narration_key(script: Script) -> str:
+    """Fingerprint of what the voice reads; a changed key means the voice is out of date."""
+    text = "\n".join(f"{s.id}:{s.narration}" for s in script.scenes)
+    return hashlib.sha1(text.encode("utf-8")).hexdigest()[:12]
+
+
 def start_job(cfg: AppConfig, story: Story) -> Job:
     if cfg.news.fetch_article:
         story = news.enrich(story, cfg)
@@ -64,7 +71,8 @@ def stage_voice(job: Job, cfg: AppConfig, voice: str | None = None, speed: float
     hooks = hooks or Hooks()
     track = synthesize_job(job, cfg, voice=voice, speed=speed, progress=hooks.voice_progress,
                            download_progress=hooks.download_progress)
-    job.mark("voice", "voiced", voice=track.voice, seconds=round(track.duration_s, 1), timed=track.timed)
+    job.mark("voice", "voiced", voice=track.voice, seconds=round(track.duration_s, 1), timed=track.timed,
+             narration=narration_key(job.load_script()))
 
 
 def stage_render(job: Job, cfg: AppConfig, hooks: Hooks | None = None) -> None:
@@ -72,7 +80,7 @@ def stage_render(job: Job, cfg: AppConfig, hooks: Hooks | None = None) -> None:
 
     hooks = hooks or Hooks()
     path = render_job(job, cfg, on_progress=hooks.render_progress)
-    job.mark("render", "rendered", video=path.name, mb=round(path.stat().st_size / 1e6, 1))
+    job.mark("render", "rendered", video=path.name, mb=round(path.stat().st_size / 1e6, 1), style=cfg.render.style)
 
 
 def make(
@@ -87,12 +95,19 @@ def make(
     only: list[str] | None = None,
     dry_run: bool = False,
     hooks: Hooks | None = None,
+    story: Story | None = None,
+    on_job: Callable[[Job], None] | None = None,
 ) -> Job:
+    """``story`` skips the pick (the web app passes the row that was clicked); ``on_job`` sees the job folder
+    as soon as it exists."""
     hooks = hooks or Hooks()
-    hooks.stage("Finding today's stories")
-    story = choose_story(cfg, pick, url)
+    if story is None:
+        hooks.stage("Finding today's stories")
+        story = choose_story(cfg, pick, url)
     hooks.stage(f"Reading: {story.title}")
     job = start_job(cfg, story)
+    if on_job:
+        on_job(job)
     handler = job.attach_log()
     try:
         log.info("Job %s: %s (%s)", job.id, story.title, story.url)
